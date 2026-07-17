@@ -3,7 +3,7 @@ import math
 import matplotlib.pyplot as plt
 
 class Value():
-    def __init__(self, data, _children = (), _op = '', label = '')
+    def __init__(self, data, _children = (), _op = '', label = ''):
         self.data = data
         self._prev = set(_children)
         self._op = _op
@@ -26,14 +26,14 @@ class Value():
         other = other if isinstance(other,Value) else Value(other)
         out = Value(self.data * other.data, (self, other), '*')
 
-        def _backward(self,other)
+        def _backward(self,other):
             self.grad += out.grad * other.data
             other.grad += out.grad * self.data
             out._backward = _backward
 
         return out
     
-    def __pow__(self, other)
+    def __pow__(self, other):
         assert isinstance(other, (int,float))
         out = Value(self.data ** other.data, (self, other), f'**{other}')
 
