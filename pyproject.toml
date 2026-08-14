@@ -1,0 +1,50 @@
+[project]
+name = "neural-net"
+version = "0.1.0"
+description = "Learning machine learning from scratch — autograd, language models, computer vision."
+readme = "README.md"
+requires-python = ">=3.11"
+
+dependencies = [
+    "numpy>=1.26",
+    "torch>=2.2",
+    "torchvision>=0.17",
+    "pandas>=2.2",
+    "matplotlib>=3.8",
+    "pillow>=10.2",
+    "scikit-learn>=1.4",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "python-multipart>=0.0.9",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+    "ruff>=0.4",
+    "jupyter>=1.0",
+    "ipykernel>=6.29",
+]
+
+[tool.uv]
+# Not an installable package — this is a learning repo, not a library.
+package = false
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["cv", "tests"]
+
+# CUDA note: the default PyPI torch wheel is CPU-only on Linux.
+# For a GPU box, uncomment and pick the matching CUDA index:
+#
+# [[tool.uv.index]]
+# name = "pytorch-cu124"
+# url = "https://download.pytorch.org/whl/cu124"
+# explicit = true
+#
+# [tool.uv.sources]
+# torch = { index = "pytorch-cu124" }
+# torchvision = { index = "pytorch-cu124" }
