@@ -62,7 +62,7 @@ def a01_per_channel_mean(x):
     in:  x (N, C, H, W) float32
     out:    (C,) float32
     """
-    raise NotImplementedError
+    return x.mean(axis = (0,2,3))
 
 
 def a02_per_channel_mean_keepdim(x):
@@ -71,7 +71,7 @@ def a02_per_channel_mean_keepdim(x):
     in:  x (N, C, H, W) float32
     out:    (1, C, 1, 1) float32
     """
-    raise NotImplementedError
+    return x.mean(axis = (0,2,3), keepdims = True)
 
 
 def a03_standardize_per_feature(x, eps=1e-8):
@@ -80,7 +80,9 @@ def a03_standardize_per_feature(x, eps=1e-8):
     in:  x (N, D) float32
     out:    (N, D) float32, each column mean ~0 and std ~1
     """
-    raise NotImplementedError
+    mu = x.mean(dim = 0, keepdim = True)
+    sigma = x.std(dim = 0, unbiased = False, keepdim = True)
+    return (x-mu)/(sigma+eps)
 
 
 def a04_flatten_images(x):
@@ -89,7 +91,7 @@ def a04_flatten_images(x):
     in:  x (N, C, H, W)
     out:    (N, C*H*W)
     """
-    raise NotImplementedError
+    return x.reshape(x.shape[0],-1)
 
 
 def a05_nhwc_to_nchw(x):

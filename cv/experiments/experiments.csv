@@ -1,1 +1,0 @@
-run_id,date,seed,model,dataset,split_hash,epochs,lr,batch_size,train_loss,val_loss,val_acc,notes
