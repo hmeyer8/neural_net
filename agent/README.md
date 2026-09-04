@@ -149,6 +149,23 @@ uv run rfcagent show 2616
 uv run pytest agent/tests -v
 ```
 
+### Hardware
+
+Encoders run on CUDA when a usable GPU is present and on CPU otherwise, resolved once in
+`config.resolve_device` and passed down — a system that silently runs half on each is a system whose
+latency numbers mean nothing. `rfcagent status` prints the device actually in use; `RFCAGENT_DEVICE=cpu`
+forces the CPU path.
+
+On this machine (RTX 3050 6GB) `bge-small-en-v1.5` encodes at **2,988 texts/s against 412 texts/s on
+CPU — 7.3×**. That is a two-minute full-corpus index instead of a twenty-minute one, which is the
+difference between running the chunking ablation twice and running it once and hoping.
+
+The GPU changes latency, not quality. recall@5 is identical on either device, so the device is
+excluded from `Settings.fingerprint()` and carried as its own ledger column instead: quality keyed by
+config hash, latency keyed by config hash *and* device. And a seed alone is not reproducibility on
+CUDA — cuDNN benchmarks algorithms at runtime and some reductions accumulate nondeterministically,
+so `set_seed()` pins deterministic algorithms for any run whose number gets reported.
+
 ## Deliberately not doing
 
 A scope that grows never closes — same discipline as `cv/call_box.md`.

@@ -45,7 +45,23 @@ uv run pytest                    # tests
 
 If you'd rather activate the environment normally, `source .venv/bin/activate` after `uv sync` works fine. Adding a dependency is `uv add <package>`, which updates both `pyproject.toml` and `uv.lock`.
 
-The default PyPI torch wheel is CPU-only on both Linux and Windows, which is what I develop against. `pyproject.toml` has a commented CUDA index if you have one.
+### Hardware
+
+I develop on an RTX 3050 6GB laptop GPU (compute capability 8.6). `pyproject.toml` pins torch and torchvision to the `cu130` wheel index so `uv sync` installs a CUDA build rather than the CPU-only default from PyPI.
+
+**This is not required to run anything here.** Delete the `[[tool.uv.index]]` and `[tool.uv.sources]` blocks at the bottom of `pyproject.toml` and `uv sync` falls back to the CPU wheel, which is also what CI uses. Everything works either way — the GPU changes how long things take, not what comes out:
+
+```bash
+uv run rfcagent status          # prints the device actually in use, and the batch sizes
+RFCAGENT_DEVICE=cpu uv run ...  # force the CPU path on a machine that has a GPU
+```
+
+Measured on this machine, `bge-small-en-v1.5` encoding: **2,988 texts/s on the GPU against 412 texts/s on CPU, a 7.3× speedup.** That's the difference between a full-corpus index build taking two minutes and taking twenty, which is the difference between running the week-1 chunking ablation twice and running it once and hoping.
+
+Two things the GPU does *not* do, worth being explicit about because it's tempting to assume otherwise:
+
+- **It does not change any quality metric.** recall@5 is the same number on either device. The device is therefore excluded from `Settings.fingerprint()` and gets its own column in the experiment ledger instead — quality is keyed by the config hash, latency by the config hash *and* the device.
+- **It does not make results reproducible by itself.** A seed alone isn't enough on CUDA: cuDNN benchmarks algorithms at runtime and some reductions accumulate nondeterministically. `set_seed()` pins cuDNN to deterministic algorithms for exactly that reason.
 
 ## How I work
 
