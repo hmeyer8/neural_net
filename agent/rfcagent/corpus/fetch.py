@@ -49,20 +49,92 @@ USER_AGENT = (
 )
 
 # Politeness floor for per-document HTTP fetches — the fallback path when rsync
-# isn't available. This is what makes ~9,700 sequential requests defensible rather
+# isn't available. This is what makes ~9,800 sequential requests defensible rather
 # than a scrape.
 MIN_DELAY_S = 0.2
 # Above this many documents via fetch_many specifically, point the caller at
 # fetch_bulk instead. fetch_bulk itself has no such cap — it *is* the bulk path.
 BATCH_WARN_THRESHOLD = 50
 
+# Transient-failure retry policy for the bulk path. A run that takes half an hour
+# will meet a dropped connection eventually; treating that as fatal throws away
+# every document fetched so far.
+MAX_ATTEMPTS = 5
+BACKOFF_BASE_S = 1.0
+BACKOFF_CAP_S = 30.0
+
+_SHARED_CLIENT: httpx.Client | None = None
+
 
 def _client(timeout: float = 60.0) -> httpx.Client:
-    return httpx.Client(
-        headers={"User-Agent": USER_AGENT},
-        timeout=timeout,
-        follow_redirects=True,
-    )
+    """A pooled, keep-alive client, created once and reused.
+
+    The first version of this module built a fresh `httpx.Client` inside every
+    call to `fetch_text`, which meant a new TCP connection and TLS handshake per
+    document — 9,835 of them for one bulk run. That is wasteful on both ends, and
+    from the server's side a client that reconnects for every single request is
+    close to indistinguishable from something hostile. It is very likely what got
+    this client's connection dropped partway through the first full run.
+
+    One pooled client with keep-alive is both faster and better behaved.
+    """
+    global _SHARED_CLIENT
+    if _SHARED_CLIENT is None or _SHARED_CLIENT.is_closed:
+        _SHARED_CLIENT = httpx.Client(
+            headers={"User-Agent": USER_AGENT},
+            timeout=timeout,
+            follow_redirects=True,
+            limits=httpx.Limits(max_connections=4, max_keepalive_connections=2),
+        )
+    return _SHARED_CLIENT
+
+
+def _get_with_retry(url: str, *, attempts: int = MAX_ATTEMPTS) -> httpx.Response:
+    """GET `url`, retrying transient failures with exponential backoff.
+
+    Retries dropped connections, timeouts, 429, and 5xx. Does **not** retry other
+    4xx — a 404 means the document genuinely isn't there, and retrying it four
+    more times is just noise against a volunteer-run server. `fetch_many` depends
+    on that 404 arriving promptly so it can record the gap and move on.
+
+    Honors `Retry-After` when the server sends one: if an operator tells you how
+    long to wait, guessing something shorter is rude and usually counterproductive.
+    """
+    delay = BACKOFF_BASE_S
+    last_exc: Exception | None = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            response = _client().get(url)
+            if response.status_code == 429 or response.status_code >= 500:
+                retry_after = response.headers.get("retry-after")
+                wait = float(retry_after) if retry_after and retry_after.isdigit() else delay
+                if attempt == attempts:
+                    response.raise_for_status()
+                time.sleep(min(wait, BACKOFF_CAP_S))
+                delay = min(delay * 2, BACKOFF_CAP_S)
+                continue
+            response.raise_for_status()
+            return response
+        except httpx.HTTPStatusError:
+            # Non-retryable status (404 and friends) — surface it immediately.
+            raise
+        except (httpx.ConnectError, httpx.ReadError, httpx.WriteError,
+                httpx.RemoteProtocolError, httpx.TimeoutException) as exc:
+            last_exc = exc
+            # A dropped connection may have poisoned the pool; force a fresh one.
+            global _SHARED_CLIENT
+            if _SHARED_CLIENT is not None:
+                _SHARED_CLIENT.close()
+                _SHARED_CLIENT = None
+            if attempt == attempts:
+                break
+            time.sleep(min(delay, BACKOFF_CAP_S))
+            delay = min(delay * 2, BACKOFF_CAP_S)
+
+    raise httpx.ConnectError(
+        f"{url} failed after {attempts} attempts: {last_exc}"
+    ) from last_exc
 
 
 def fetch_index(*, force: bool = False) -> Path:
@@ -75,9 +147,7 @@ def fetch_index(*, force: bool = False) -> Path:
     if dest.exists() and not force:
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with _client() as client:
-        response = client.get(INDEX_URL)
-        response.raise_for_status()
+    response = _get_with_retry(INDEX_URL)
     dest.write_bytes(response.content)
     return dest
 
@@ -88,9 +158,7 @@ def fetch_text(number: int, *, force: bool = False) -> Path:
     if dest.exists() and not force:
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with _client() as client:
-        response = client.get(TEXT_URL.format(n=number))
-        response.raise_for_status()
+    response = _get_with_retry(TEXT_URL.format(n=number))
     # RFCs are ASCII by specification; the handful with UTF-8 bodies declare it.
     dest.write_bytes(response.content)
     return dest
