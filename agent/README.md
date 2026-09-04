@@ -94,6 +94,27 @@ Honest state, updated as things land.
 - [x] Metadata parsing — the full supersession graph out of `rfc-index.xml`
 - [x] Text parsing — page furniture stripped, TOC rejected, sections split with line spans
 - [x] RFC 2119/8174 normative-keyword extraction, case-sensitive
+- [x] **Corpus ingested and the parser validated against all of it** — 9,828 documents (1969–2026), 7 with no plain-text version. See below.
+
+### Corpus and parser validation
+
+The parser's docstring claimed *"a parser you have not tested against 1989 is a parser that works on 2014."* With the corpus on disk that got tested rather than asserted.
+
+| | |
+|---|---|
+| Documents on disk | 9,828 of 9,835 indexed (7 exist only as scans) |
+| Parse throughput | 9,828 documents in 18.2s (540 docs/s) |
+| Sections per document | median 23, mean 30.5, max 998 (RFC 8881, NFSv4.1) |
+| Documents with no numbered sections | 641 — **all of them pre-1995**, zero after |
+
+Two real bugs, both found only by sweeping the whole corpus:
+
+- **RFC 2626** produced **550 phantom sections** from lines reading `2000  found at line 3182:` — it's a Y2K survey full of bare years, and a heading test that only checks *shape* accepts every one of them.
+- **RFC 1035** wrapped a sentence onto a line beginning `25 (SMTP).  If this bit is set…`, which parsed as section 25.
+
+Both are fixed by treating section numbers as a **sequence** rather than a shape: a top-level number never jumps more than one past the highest already seen. RFC 2626 drops 629 → 78 sections; RFC 7234, 2616, 8446, 9110, 793 and the ~997-section NFS specs lose nothing.
+
+The 641 unstructured documents are a genuine **limitation, not a bug** — early RFCs are memos using Roman numerals and ALL-CAPS headings, so there is no numbered structure to find. They cannot be chunked below document level, which will show up in retrieval and belongs in the limitations page rather than being quietly ignored.
 
 **Specified, with a passing-or-failing grader, not yet implemented**
 

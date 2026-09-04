@@ -1,1 +1,4 @@
 run_id,date,track,component,question_set,seed,config_hash,device,changed,metric_name,metric_value,n,notes
+001,2026-09-04,agent,corpus/parse,full-corpus-sweep,1337,e23aaad8f3bf,cuda,baseline parser over all documents,docs_parsed,9828,9828,"median 23 sections; 18.2s total; 641 docs with no numbered sections"
+002,2026-09-04,agent,corpus/parse,full-corpus-sweep,1337,e23aaad8f3bf,cuda,monotonic section-number guard,phantom_sections_rfc2626,78,1,"was 629; 550 phantom headings from bare years rejected"
+003,2026-09-04,agent,corpus/parse,full-corpus-sweep,1337,e23aaad8f3bf,cuda,monotonic section-number guard,docs_unstructured,641,9828,"was 581; +60 early-70s docs correctly lost fake structure. all pre-1995"

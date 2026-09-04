@@ -240,11 +240,39 @@ def parse_text(number: int, raw: str) -> list[Section]:
     """
     lines = _strip_page_furniture(raw)
 
+    # Heading detection, with a monotonic-sequence guard on numbered headings.
+    #
+    # `_heading` is a shape test: it accepts any line starting at column 0 with a
+    # leading integer and some text. That shape is also matched by ordinary
+    # wrapped prose, and the corpus proves it. Two real cases:
+    #
+    #   RFC 2626, a Y2K survey full of bare years, produced 550 phantom sections
+    #   from lines reading "2000  found at line 3182:".
+    #
+    #   RFC 1035 wrapped a sentence onto a line beginning "25 (SMTP).  If this
+    #   bit is set, ...", which parsed as section 25.
+    #
+    # Both are caught by the observation that section numbers are a *sequence*,
+    # not just a shape: a top-level number never jumps more than one past the
+    # highest already seen. Measured across the corpus, this drops 550 phantom
+    # sections from RFC 2626 and one from RFC 1035 while removing nothing from
+    # RFC 7234, 2616, 8446, 9110, 793, or the ~997-section NFS specifications.
+    #
+    # Appendices are exempt: they are lettered, restart their own numbering, and
+    # legitimately follow the highest numbered section.
     starts: list[tuple[int, str, str]] = []
+    max_top = 0
     for i, line in enumerate(lines):
         found = _heading(line)
-        if found:
-            starts.append((i, found[0], found[1]))
+        if not found:
+            continue
+        num, title = found
+        if num and num[0].isdigit():
+            top = int(num.split(".")[0])
+            if top > max_top + 1:
+                continue
+            max_top = max(max_top, top)
+        starts.append((i, num, title))
 
     # A document with no detectable headings is a parser failure, not a document
     # with no structure. Surface it rather than emitting one 40-page chunk.
