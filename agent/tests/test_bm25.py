@@ -16,7 +16,6 @@ from __future__ import annotations
 import math
 
 import pytest
-
 from rfcagent.index.bm25 import BM25Index, tokenize
 
 # --------------------------------------------------------------------------
