@@ -1,11 +1,12 @@
 [project]
 name = "neural-net"
 version = "0.1.0"
-description = "Learning machine learning from scratch — autograd, language models, computer vision."
+description = "Learning machine learning from scratch — autograd, language models, computer vision, and an LLM agent over a normative corpus."
 readme = "README.md"
 requires-python = ">=3.11"
 
 dependencies = [
+    # fundamentals + cv tracks
     "numpy>=1.26",
     "torch>=2.2",
     "torchvision>=0.17",
@@ -13,38 +14,70 @@ dependencies = [
     "matplotlib>=3.8",
     "pillow>=10.2",
     "scikit-learn>=1.4",
+    # agent track
+    "pydantic>=2.7",
+    "httpx>=0.27",
+    "sentence-transformers>=3.0",
+    "rich>=13.7",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "python-multipart>=0.0.9",
 ]
 
+[project.optional-dependencies]
+# Hosted providers. Neither is needed to run the agent, the evals, or CI —
+# the default provider is local (Ollama) and CI runs the offline EchoProvider.
+anthropic = ["anthropic>=0.40"]
+bedrock = ["anthropic[bedrock]>=0.40", "boto3>=1.34"]
+
+[project.scripts]
+rfcagent = "rfcagent.cli:main"
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=5.0",
     "httpx>=0.27",
     "ruff>=0.4",
     "jupyter>=1.0",
     "ipykernel>=6.29",
 ]
 
-[tool.uv]
-# Not an installable package — this is a learning repo, not a library.
-package = false
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# Only the agent track is a real package. micrograd/, makemore/, and cv/ are
+# scripts and notebooks and are deliberately not importable as a library.
+packages = ["agent/rfcagent"]
 
 [tool.ruff]
 line-length = 100
 
-[tool.pytest.ini_options]
-testpaths = ["cv", "tests"]
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
 
-# CUDA note: the default PyPI torch wheel is CPU-only on Linux.
-# For a GPU box, uncomment and pick the matching CUDA index:
-#
-# [[tool.uv.index]]
-# name = "pytorch-cu124"
-# url = "https://download.pytorch.org/whl/cu124"
-# explicit = true
-#
-# [tool.uv.sources]
-# torch = { index = "pytorch-cu124" }
-# torchvision = { index = "pytorch-cu124" }
+[tool.pytest.ini_options]
+testpaths = ["agent/tests"]
+addopts = "-q"
+markers = [
+    "network: hits the public internet; deselected by default in CI",
+    "slow: takes more than a few seconds (embedding, full-corpus indexing)",
+]
+
+# CUDA. This machine has an RTX 3050 6GB (driver 596.36, CUDA 13.2, compute
+# capability 8.6), so torch and torchvision come from the matching cu130 wheel
+# index instead of the default CPU-only PyPI build. The driver's CUDA version is
+# a ceiling, not a target — a wheel built for an older CUDA runtime than the
+# driver supports still works, so cu130 (not the newest cu132) is the safer,
+# better-tested pick. If this ever runs on a different machine without this GPU,
+# delete this block and `uv sync` falls back to the CPU wheel automatically.
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu130" }
+torchvision = { index = "pytorch-cu130" }

@@ -12,9 +12,9 @@ I'm a machine learning intern at Sandhills Global, finishing a math degree at UN
 
 An LLM agent that answers questions about internet standards, cites the exact section it used, refuses when the corpus doesn't support an answer, and checks whether the document it found has been superseded. Hand-written agent loop, hybrid retrieval, an eval suite that gates CI, and end-to-end tracing.
 
-The design question driving it: *the hard problem in a normative corpus is not finding the text, it's knowing whether the text you found is still in force.* That can't be answered by similarity search — it's a graph query over document metadata — which is why this is an agent with tools and not a retrieval pipeline. See [`ROADMAP.md`](ROADMAP.md).
+The design question driving it: *the hard problem in a normative corpus is not finding the text, it's knowing whether the text you found is still in force.* That can't be answered by similarity search — it's a graph query over document metadata — which is why this is an agent with tools and not a retrieval pipeline. See [`agent/README.md`](agent/README.md) and [`ROADMAP.md`](ROADMAP.md).
 
-Started 2026-09-04. The scaffold lands next; the first measured retrieval baseline is the week-1 gate.
+Started 2026-09-04. First measured retrieval baseline lands at the end of week 1; the results table in `agent/README.md` is where it goes.
 
 **`cv/` — applied computer vision. Paused.**
 
@@ -66,5 +66,5 @@ Every run gets a row in [`experiments/experiments.csv`](experiments/experiments.
 Stated plainly, because a portfolio that only advertises is not worth reading:
 
 - The CV projects (classify, detect, segment, serve) are **not built**. The scaffolding for them used to be in this repo as empty directories; I removed it, because empty directories that promise results are worse than an honest gap.
-- The agent track is **days old** and its code is not in this commit yet. [`ROADMAP.md`](ROADMAP.md) states what is planned and when, and distinguishes it from what is measured.
+- The agent track is **days old**. Everything in `agent/` is dated and its README distinguishes what is measured from what is planned.
 - No employer data appears anywhere in this repo, and no dataset without an open license.
