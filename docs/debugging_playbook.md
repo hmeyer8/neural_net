@@ -88,3 +88,18 @@ one of these runs clean and returns plausible numbers.
 | Seeded run that still won't reproduce on CUDA | cuDNN benchmarks algorithms at runtime; some reductions accumulate nondeterministically. Near-tied retrieval hits swap order and read as a regression. | `torch.backends.cudnn.deterministic = True`, `benchmark = False` before any reported run. |
 | Batch size tuned for a datacenter GPU on a 6 GB laptop | OOM three hours into an index build, after the useful work is lost. | Size the batch for VRAM shared with a desktop compositor, not for the card's spec sheet. Checkpoint long builds. |
 | VRAM not released between stages | Index build then rerank in one process; the second stage OOMs while `nvidia-smi` shows memory held by the first. | `del model; torch.cuda.empty_cache()` between stages, or run stages as separate processes. |
+
+---
+
+## Silent failures in data ingestion
+
+Added 2026-09-04, from building the RFC corpus. Both of these ran clean and
+exited 0.
+
+| Failure | How it hides | How to catch it |
+|---|---|---|
+| Resume guard treats a partial corpus as finished | A bulk fetch interrupted at 2,895 of 9,835 re-ran, fetched nothing, printed a document count, and exited 0. Downstream then indexes a third of the corpus and reports recall against it, and nothing anywhere looks wrong. | Resume by set difference against the authoritative list, never by a file count. Print all three numbers — have, missing, outstanding — so "complete" is a claim with evidence. |
+| Heading detector matches on shape, not structure | Prose that happens to start with a number becomes a section. One document produced 550 phantom sections from bare years; the parse succeeded and the sections looked real. | Sweep the *whole* corpus and inspect the distribution tails, not a few known-good documents. Anything with far more or far fewer units than its peers is the bug. |
+| A parser tested only on modern documents | Format conventions drift across decades. Everything passes on 2014 and silently produces one giant unit for 1972. | Bucket the validation by era and require the failure rate to be flat, or explain the shape. |
+| Fresh HTTP client per request in a bulk job | Works fine for ten documents. At ten thousand it is ten thousand TLS handshakes, and the remote eventually drops you mid-run. | Pool one client. Assert connection reuse before starting a long job. |
+| Exit code 0 taken as proof of completion | The fastest-looking success is often the one that did nothing. | Check the *quantity* produced against what was expected, not just the status. A run that finished suspiciously fast did. |
