@@ -262,11 +262,6 @@ def fetch_bulk(*, force: bool = False, progress: bool = True) -> int:
     Requires the index to already be fetched (`fetch_index()`), since that's where
     the full list of RFC numbers comes from.
     """
-    text_dir = settings.paths.text
-    existing = len(list(text_dir.glob("rfc*.txt"))) if text_dir.exists() else 0
-    if existing > 1000 and not force:
-        return existing
-
     if _rsync_available():
         try:
             return _fetch_bulk_rsync(progress=progress)
@@ -279,36 +274,85 @@ def fetch_bulk(*, force: bool = False, progress: bool = True) -> int:
             "no rfc-index.xml on disk — run fetch_index() first; fetch_bulk() needs "
             "it for the list of RFC numbers when rsync isn't available"
         )
+
+    # Resume by set difference, not by a file count.
+    #
+    # This previously bailed out whenever more than 1,000 documents were already
+    # on disk, on the theory that a populated directory meant a finished corpus.
+    # It does not: a run interrupted at 2,895 of 9,835 hit that guard on the next
+    # invocation, fetched nothing, and *reported success*. A resume path that
+    # silently declares a partial corpus complete is worse than no resume path at
+    # all, because everything downstream then indexes a third of the corpus and
+    # reports recall against it with nothing looking wrong.
     numbers = _all_index_numbers()
+    have = set(local_numbers())
+    known_missing = load_missing()
+    outstanding = [n for n in numbers if n not in have and n not in known_missing]
+
+    if not outstanding and not force:
+        if progress:
+            print(
+                f"complete: {len(have)} documents on disk, "
+                f"{len(known_missing)} known to have no plain text",
+                flush=True,
+            )
+        return len(have)
+
+    target = numbers if force else outstanding
     if progress:
         print(
-            f"rsync unavailable — fetching {len(numbers)} documents over HTTP "
-            f"at {MIN_DELAY_S}s/request (~{len(numbers) * MIN_DELAY_S / 60:.0f} min)",
+            f"rsync unavailable — {len(have)} on disk, fetching {len(target)} over "
+            f"HTTP at {MIN_DELAY_S}s/request "
+            f"(~{len(target) * MIN_DELAY_S / 60:.0f} min)",
             flush=True,
         )
     written = 0
     for i, path in enumerate(
-        fetch_many(numbers, force=force, allow_large_batch=True, skip_404=True),
+        fetch_many(target, force=force, allow_large_batch=True, skip_404=True),
         start=1,
     ):
         written += 1
         if progress and i % 500 == 0:
-            print(f"  {i}/{len(numbers)} ({path.name})", flush=True)
+            print(f"  {i}/{len(target)} ({path.name})", flush=True)
 
-    missing = fetch_many.missing_numbers
-    if missing:
-        missing_path = text_dir.parent / "missing.txt"
-        missing_path.write_text("\n".join(str(n) for n in missing) + "\n")
+    # Accumulate across runs rather than overwrite: a resumed run only sees the
+    # gaps in its own slice, and clobbering the file would lose the rest.
+    newly_missing = set(fetch_many.missing_numbers)
+    if newly_missing:
+        all_missing = sorted(known_missing | newly_missing)
+        _missing_path().write_text(
+            "\n".join(str(n) for n in all_missing) + "\n", encoding="utf-8"
+        )
         if progress:
             print(
-                f"  {len(missing)} documents have no plain-text version (list: "
-                f"{missing_path})",
+                f"  {len(newly_missing)} more with no plain-text version "
+                f"({len(all_missing)} total; list: {_missing_path()})",
                 flush=True,
             )
     if progress:
-        print(f"done: {written} documents written", flush=True)
+        print(
+            f"done: {written} written, {len(local_numbers())} documents on disk",
+            flush=True,
+        )
     return written
 
+
+def _missing_path() -> Path:
+    return settings.paths.corpus / "missing.txt"
+
+
+def load_missing() -> set[int]:
+    """RFC numbers already known to have no plain-text version.
+
+    Persisted so a resumed run does not re-request documents the server has
+    already told us are not there. Without it, every resume re-walks the same
+    404s against a volunteer-run server, which is exactly the behavior the
+    politeness delay elsewhere in this module exists to avoid.
+    """
+    path = _missing_path()
+    if not path.exists():
+        return set()
+    return {int(tok) for tok in path.read_text().split() if tok.isdigit()}
 
 def local_numbers() -> list[int]:
     """Every RFC number whose text is already on disk."""
