@@ -4,6 +4,58 @@ Newest first.
 
 ---
 
+## 9/4 — Starting the agent track, and the keepdim bug wearing a different costume
+
+Big day. New track, three bugs, and one of them is the same bug I wrote about on 7/25 in a completely different outfit.
+
+**Why I'm switching tracks.** The CV work is paused, and I want to be honest in writing about why rather than dressing it up. The stated reason on 8/13 was that I wanted to take a model from raw data to something a person could call. That's still true. The actual reason is that the job I want is applied LLM systems — agents, retrieval, evaluation, the operations around models — and building a fourth CNN would have been comfortable and off-target. The drills stay (`reps.py` runs every morning, that's not negotiable), but the project work moves.
+
+What survives intact is the standard: a thing is done when there's a number, a baseline, and a written account of how it fails. That was the best idea in the CV track and it transfers without modification.
+
+**Why RFCs.** I needed a corpus where I could grade answers instead of eyeballing them. The thing that sold me is this: RFC 2616 §14.9 reads perfectly, quotes cleanly, and was obsoleted in 2014. A retrieval system finds it, cites it correctly, and is wrong — and *nothing about the answer looks wrong*. The retrieval worked. The quote is accurate. The citation points at real text.
+
+You cannot detect that with similarity search, because "is this still in force" isn't in the passage. It's in the document's `Obsoletes`/`Obsoleted-By` graph, which is structured metadata the retriever never consults. So the system needs a second, different kind of lookup, and *that's* the difference between a RAG demo and an agent. The multi-step part isn't decoration — take it out and the failure mode is silent, confident, checkable errors.
+
+The sentence I want to be able to say out loud: **the hard problem in a normative corpus isn't finding the text, it's knowing whether the text you found is still in force.** That's also true of policy, regulation, and procedure, which is the point.
+
+**The keepdim bug, again.** Here's the one I want to remember.
+
+The corpus fetcher pulls ~9,800 documents. The first run died partway through on a dropped connection. Fixed that. Reran it. It printed `2895 documents`, exited 0, and took about two seconds.
+
+It had fetched nothing. The resume guard was `if existing > 1000: return existing` — the assumption being that a directory with a lot of files in it is a finished corpus. It isn't. It was 2,895 of 9,835, and the function looked at a populated directory and declared victory.
+
+Now hold that next to 7/25. The `keepdim` bug was shape-compatible, so torch ran it without a single error and the rows just didn't sum to 1. This one is *count-compatible* — a corpus with files in it looks like a corpus — so the fetcher ran without a single error and the corpus was 29% complete. Same class of failure. Both run clean. Both produce something that has the right shape and the wrong contents.
+
+And this one is worse, which took me a minute to see. The `keepdim` bug produced wrong numbers immediately, right there in the notebook. This one produces *plausible* numbers much later and somewhere else entirely: I'd have built the index, run retrieval, and gotten a recall@5 on 29% of the corpus. Recall@5 on a third of a corpus looks exactly like recall@5 on all of it. There's no shape to check, no assertion that fires, no row that fails to sum to 1. It's just quietly a different experiment than the one I'd have written down in the ledger.
+
+The only reason I caught it: **it finished too fast.** That's the entire detection mechanism. Not a test, not an assertion — a feeling about elapsed time. That's not good enough, and the fix is the rule I'm writing into the playbook: *check the quantity produced against what you expected, not the exit code.* A run that finishes suspiciously fast did.
+
+Resume is a set difference now — index numbers, minus what's on disk, minus what's known to 404 — and it prints all three counts, so "complete" is a claim with evidence behind it instead of an inference from a file count.
+
+**Shape versus sequence.** I'd written a line in the parser docstring that I was pleased with: *a parser you have not tested against 1989 is a parser that works on 2014.* Then the corpus landed and I actually tested it against 1989. Half right.
+
+The heading detector is a **shape** test — column 0, leading integer, some text. Ordinary prose matches that shape. RFC 2626 is a Y2K survey document full of bare years, and it produced **550 phantom sections** from lines reading `2000  found at line 3182:`. RFC 1035 wrapped a sentence onto a line starting `25 (SMTP).  If this bit is set…` and that became section 25.
+
+The fix is the useful idea: section numbers aren't just a shape, they're a **sequence**. A top-level number never jumps more than one past the highest you've already seen. `2000` after section 6 is not a section. That single constraint drops RFC 2626 from 629 sections to 78 and removes nothing from RFC 7234, 2616, 8446, 9110, 793, or the ~997-section NFS specs.
+
+**The metric that moved the wrong way and was right.** Adding that guard raised "documents parsing to one section" from 581 to 641. My first read was that I'd broken 60 documents. I hadn't — those are early-70s memos where the rejected "headings" were host tables (`65  UCLA  IBM-360/91`), street addresses (`1400 Wilson Boulevard`), and wrapped prose. They had *fake* structure before and correctly have none now.
+
+Worth sitting with, because I'd have accepted the opposite conclusion if I hadn't looked: a number moving in the bad direction can be the number getting more honest. Same reason I check what's *behind* a metric before believing it went up.
+
+The real finding underneath: 641 documents have no numbered sections at all, and every one of them is pre-1995. Zero after. That's a property of the format, not a parser failure — but it's a genuine limitation for retrieval, since those can't be chunked below document level, and it goes on the limitations page rather than being quietly ignored.
+
+**GPU.** Moved torch to the cu130 wheel for the 3050. Encoding goes 412 → 2,988 texts/s, 7.3×. What matters isn't the number, it's that a full-corpus index build drops from ~20 minutes to ~2, which is what makes running the chunking ablation *twice* affordable instead of once-and-hoping.
+
+One decision I want to remember the reasoning for: the device is deliberately **not** in the config hash. recall@5 is the same number on a GPU or a CPU, so folding the device into the identity of a configuration would split the ledger into two families of runs that aren't actually comparing anything different. It gets its own column instead — quality keyed by the hash, latency keyed by the hash *and* the device. Also learned that a seed isn't reproducibility on CUDA: cuDNN benchmarks algorithms at runtime, so identically seeded runs can differ in the last decimals, which is enough to flip two near-tied retrieval hits and read as a regression that never happened.
+
+**What I'm taking from today.** Every real bug today was silent. None of them threw. The connection drop was the only one that announced itself, and it was the least dangerous of the three.
+
+I think the actual skill I'm building isn't writing the retrieval system — it's developing the instinct for *where a system can lie to you*. Shape-compatible broadcasts. Count-compatible corpora. Prose that matches a heading regex. Exit code 0. In every case the code is fine and the assumption underneath it is wrong, and there's nothing to read in the traceback because there is no traceback.
+
+Next: BM25 by hand, then chunking measured two ways instead of picked one way, then the first real recall@5.
+
+---
+
 ## 8/19: reps.py notes
 Four axes for a batch of images: x.shape = (N, C, H, W). N is number of image in batch, C is color channel- RGB usually. H is pixel row, w is pixel column. 
 
